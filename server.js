@@ -77,23 +77,15 @@ app.post('/api/threads', async (req, res) => {
   }
 });
 
-// Add message to thread endpoint
-app.post('/api/threads/:threadId/messages', async (req, res) => {
-  try {
-    const fetch = await getFetch();
-    const { threadId } = req.params;
-    const { content, attachments } = req.body;
-    
-    const messageData = {
-      role: 'user',
-      content: content
-    };
-    
-    if (attachments) {
-      messageData.attachments = attachments;
-    }
-    
-    const response = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
+async function getMessageReply(threadId, content, attachments) {
+  const messageData = {
+    role: 'user',
+    content
+  };
+  if (attachments) {
+    messageData.attachments = attachments;
+  }
+  return fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
@@ -101,9 +93,21 @@ app.post('/api/threads/:threadId/messages', async (req, res) => {
         'OpenAI-Beta': 'assistants=v2'
       },
       body: JSON.stringify(messageData)
-    });
-    
-    const data = await response.json();
+    })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return response.json();
+    })
+} 
+
+// Add message to thread endpoint
+app.post('/api/threads/:threadId/messages', async (req, res) => {
+  try {
+    const { threadId } = req.params;
+    const { content, attachments } = req.body;
+    const data = await getMessageReply(threadId, content, attachments);
     res.json(data);
   } catch (error) {
     console.error('Message addition error:', error);
@@ -327,7 +331,7 @@ function base64ToFile(base64Data, filename = 'image.png') {
 }
 
 // Face aging route using OpenAI Image Editing API - NOW WITH FILE STORAGE
-app.post('/api/age-face', async (req, res) => {
+app.post('/api/age-face/:threadId', async (req, res) => {
     try {
         const { imageBase64, ageTarget = 50 } = req.body;
         
@@ -354,7 +358,11 @@ app.post('/api/age-face', async (req, res) => {
         console.log('🎨 Running OpenAI Image Edit...');
         
         // Create the aging prompt
-        const prompt = "Generate an image of this person as a doctor.";
+        const { threadId } = req.params
+        const reply = await getMessageReply(threadId, 'Kun je een promt maken die op basis van deze chat vraagt om een foto te maken van mij als ik ouder ben? Ik wil geen uitleg, alleen de prompt.', );
+        // hier even uitzoekeen wat de repsonse structuur van de reply is, deze regel klopt misschien niet:
+        const prompt = reply.choices[0].message.content;
+
         console.log(`🎯 Using prompt: ${prompt}`);
 
         // Convert the image buffer to a format suitable for the OpenAI API

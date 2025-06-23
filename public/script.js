@@ -89,6 +89,8 @@ async function addMessageToThread(threadId, content) {
     return await response.json();
 }
 
+// Add this to your existing script.js - UPDATE the runAssistant function
+
 async function runAssistant(threadId) {
     console.log('🚀 Starting assistant run for thread:', threadId);
     
@@ -110,9 +112,9 @@ async function runAssistant(threadId) {
     
     // Poll for completion and handle multiple function calls
     let runStatus = await pollRunStatus(threadId, run.id);
-    let maxIterations = 3;
+    let maxIterations = 5; // Increased for career visualization
     let iteration = 0;
-    let generatedImageData = null;
+    let generatedCareerData = null;
     
     while (runStatus.status === 'requires_action' && iteration < maxIterations) {
         iteration++;
@@ -124,17 +126,63 @@ async function runAssistant(threadId) {
         for (const toolCall of toolCalls) {
             console.log('🔧 Processing function call:', toolCall.function.name);
             
-            if (toolCall.function.name === 'generate_image') {
+            if (toolCall.function.name === 'generate_career_visualization') {
                 try {
-                    if (generatedImageData) {
-                        console.log('🔄 Already generated image, using cached result');
+                    if (generatedCareerData) {
+                        console.log('🔄 Already generated career visualization, using cached result');
                         toolOutputs.push({
                             tool_call_id: toolCall.id,
-                            output: `TASK COMPLETED: Image already generated successfully. Here is the aged version: ${generatedImageData}`
+                            output: `SUCCESS: Career visualization already generated. ${generatedCareerData}`
                         });
                         continue;
                     }
                     
+                    const args = JSON.parse(toolCall.function.arguments);
+                    console.log('👔 generate_career_visualization arguments:', args);
+                    
+                    // Show user message if provided
+                    if (args.userMessage) {
+                        addMessage(args.userMessage, 'assistant');
+                    }
+                    
+                    const careerResult = await generateCareerVisualization(args);
+                    console.log('🖼️ Career visualization result:', careerResult ? 'Success' : 'Failed');
+                    
+                    if (careerResult && careerResult.success) {
+                        generatedCareerData = `Career visualization generated successfully for ${args.careerField}${args.specificRole ? ` as ${args.specificRole}` : ''}. Image URL: ${careerResult.careerImageUrl}`;
+                        
+                        toolOutputs.push({
+                            tool_call_id: toolCall.id,
+                            output: `SUCCESS: ${generatedCareerData}`
+                        });
+                        
+                        // Display the career visualization immediately
+                        const careerMessage = `
+                            Hier is jouw professionele toekomst als ${args.specificRole || args.careerField} specialist! 👨‍💼👩‍💼
+                            
+                            ![Jouw Carrière Toekomst](${careerResult.careerImageUrl})
+                            
+                            Zo zou je eruit kunnen zien in jouw droomcarrière. Wat denk je ervan?
+                        `;
+                        addMessage(careerMessage, 'assistant');
+                        
+                    } else {
+                        const errorMsg = careerResult?.message || 'Failed to generate career visualization';
+                        toolOutputs.push({
+                            tool_call_id: toolCall.id,
+                            output: `ERROR: ${errorMsg}`
+                        });
+                    }
+                } catch (error) {
+                    console.error('❌ Error processing generate_career_visualization:', error);
+                    toolOutputs.push({
+                        tool_call_id: toolCall.id,
+                        output: `ERROR: Failed to generate career visualization - ${error.message}`
+                    });
+                }
+            } else if (toolCall.function.name === 'generate_image') {
+                // Keep existing DALL-E functionality
+                try {
                     const args = JSON.parse(toolCall.function.arguments);
                     console.log('🎨 generate_image arguments:', args);
                     
@@ -142,10 +190,9 @@ async function runAssistant(threadId) {
                     console.log('🖼️ Image generation result:', imageResult ? 'Success' : 'Failed');
                     
                     if (imageResult) {
-                        generatedImageData = imageResult.data;
                         toolOutputs.push({
                             tool_call_id: toolCall.id,
-                            output: `TASK COMPLETED: Successfully generated aged image. The aging process is now complete. Please show this aged version to the user and do not generate any more images. Image data: ${imageResult.data}`
+                            output: `TASK COMPLETED: Successfully generated image. Image data: ${imageResult.data}`
                         });
                     } else {
                         toolOutputs.push({
@@ -190,15 +237,15 @@ async function runAssistant(threadId) {
         runStatus = await pollRunStatus(threadId, run.id);
         console.log(`🔄 After tool submission - Status: ${runStatus.status}`);
         
-        if (generatedImageData && runStatus.status === 'requires_action') {
-            console.log('🛑 Forcing completion - image already generated');
+        if (generatedCareerData && runStatus.status === 'requires_action') {
+            console.log('🛑 Forcing completion - career visualization already generated');
             break;
         }
     }
     
-    if (generatedImageData && runStatus.status === 'requires_action') {
-        console.log('✅ Image generated successfully, treating as completed');
-        return `I have successfully generated an aged version of the uploaded image. Here is the result: ![Aged Version](${generatedImageData})`;
+    if (generatedCareerData && runStatus.status === 'requires_action') {
+        console.log('✅ Career visualization generated successfully, treating as completed');
+        return `Ik heb succesvol een carrière visualisatie gegenereerd. Je kunt nu verdergaan met het gesprek!`;
     }
     
     if (runStatus.status === 'completed') {
@@ -217,6 +264,35 @@ async function runAssistant(threadId) {
             console.error('❌ Max iterations reached - possible infinite loop');
         }
         throw new Error(`Run failed with status: ${runStatus.status}`);
+    }
+}
+
+// NEW FUNCTION: Generate career visualization
+async function generateCareerVisualization(args) {
+    console.log('👔 generateCareerVisualization() called with args:', args);
+    
+    try {
+        const response = await fetch('/api/generate-career-visualization', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(args)
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            console.error('❌ Career visualization API error:', response.status, errorData);
+            return { success: false, message: errorData.message || 'Failed to generate career visualization' };
+        }
+        
+        const data = await response.json();
+        console.log('📊 Career visualization response:', data.success ? 'Success' : 'Failed');
+        
+        return data;
+    } catch (error) {
+        console.error('💥 Error in generateCareerVisualization():', error);
+        return { success: false, message: error.message };
     }
 }
 

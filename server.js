@@ -359,8 +359,9 @@ app.post('/api/age-face/:threadId', async (req, res) => {
         
         // Create the aging prompt
         const { threadId } = req.params
-        const reply = await getMessageReply(threadId, 'Kun je een promt maken die op basis van deze chat vraagt om een foto te maken van mij als ik ouder ben? Ik wil geen uitleg, alleen de prompt.', );
+        const reply = await getMessageReply(threadId, 'Kun je een prompt maken die op basis van deze chat vraagt om een foto te maken van mij als ik ouder ben? Ik wil geen uitleg, alleen de prompt.', );
         // hier even uitzoekeen wat de repsonse structuur van de reply is, deze regel klopt misschien niet:
+        console.log(reply.content.value)
         const prompt = reply.choices[0].message.content;
 
         console.log(`🎯 Using prompt: ${prompt}`);

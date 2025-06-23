@@ -2,13 +2,22 @@ const express = require('express');
 const path = require('path');
 const cors = require('cors');
 const multer = require('multer');
-const Replicate = require('replicate');
+const OpenAI = require('openai');
+const { toFile } = require('openai');
+const fs = require('fs');
 require('dotenv').config();
 
-// Initialize Replicate client
-const replicate = new Replicate({
-  auth: process.env.REPLICATE_API_TOKEN,
+// Initialize OpenAI client
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
+
+// CREATE UPLOADS DIRECTORY IF IT DOESN'T EXIST
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+    console.log('📁 Created uploads directory:', uploadsDir);
+}
 
 // Fix for fetch in Node.js
 let fetch;
@@ -42,6 +51,9 @@ const upload = multer({
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'));
+
+// SERVE UPLOADED IMAGES STATICALLY
+app.use('/uploads', express.static(uploadsDir));
 
 // Create thread endpoint
 app.post('/api/threads', async (req, res) => {
@@ -300,91 +312,161 @@ app.post('/api/upload-file', upload.single('file'), async (req, res) => {
   }
 });
 
-// REPLICATE ROUTES - Using Official Client
+// Helper function to convert base64 to buffer and create a File-like object
+function base64ToFile(base64Data, filename = 'image.png') {
+  // Remove data URL prefix if present
+  const base64String = base64Data.replace(/^data:image\/[a-z]+;base64,/, '');
+  const buffer = Buffer.from(base64String, 'base64');
+  
+  // Create a File-like object that OpenAI expects
+  return {
+    buffer,
+    name: filename,
+    type: filename.endsWith('.png') ? 'image/png' : 'image/jpeg'
+  };
+}
 
-// Face aging route using yuval-alaluf/sam model
+// Face aging route using OpenAI Image Editing API - NOW WITH FILE STORAGE
 app.post('/api/age-face', async (req, res) => {
     try {
-        // Target age 70 for "future career self" (assuming students are ~20-25)
         const { imageBase64, ageTarget = 50 } = req.body;
         
-        console.log('👴 Aging face using yuval-alaluf/sam model, target age:', ageTarget);
+        console.log('👴 Aging face using OpenAI Image Editing API, target age:', ageTarget);
         
-        if (!process.env.REPLICATE_API_TOKEN) {
-            return res.status(500).json({ error: 'Replicate API token not configured' });
+        // Ensure that the OPENAI_API_KEY is set
+        if (!process.env.OPENAI_API_KEY) {
+            console.error('OPENAI_API_KEY is not set in the environment variables');
+            return res.status(500).json({ error: 'OpenAI API key not configured' });
         }
         
-        const imageDataUrl = imageBase64.startsWith('data:') ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`;
+        // Remove data URL prefix if present
+        const base64String = imageBase64.replace(/^data:image\/[a-z]+;base64,/, '');
+        const imageBuffer = Buffer.from(base64String, 'base64');
         
-        console.log('🎨 Running yuval-alaluf/sam model...');
+        // SAVE ORIGINAL IMAGE TO SERVER
+        const timestamp = Date.now();
+        const originalFilename = `original_${timestamp}.png`;
+        const originalPath = path.join(uploadsDir, originalFilename);
         
-        const validTargetAge = 50; // Target age for "future career self"
+        fs.writeFileSync(originalPath, imageBuffer);
+        console.log('💾 Original image saved:', originalPath);
         
-        const input = {
-            image: imageDataUrl,
-            target_age: validTargetAge.toString()
-        };
+        console.log('🎨 Running OpenAI Image Edit...');
+        
+        // Create the aging prompt
+        const prompt = "Generate an image of this person as a doctor.";
+        console.log(`🎯 Using prompt: ${prompt}`);
 
-        console.log(`🎯 Using target age: ${validTargetAge} (future career self)`);
+        // Convert the image buffer to a format suitable for the OpenAI API
+        const imageType = 'image/png';
+        const image = await toFile(imageBuffer, 'image.png', { type: imageType });
 
-        const output = await replicate.run(
-            "yuval-alaluf/sam:9222a21c181b707209ef12b5e0d7e94c994b58f01c7b2fec075d2e892362f13c",
-            { input }
-        );
+        // Use OpenAI's image editing API
+        const response = await openai.images.edit({
+            model: "gpt-image-1",
+            image,
+            prompt,
+        });
 
-        console.log('✅ SAM model completed successfully');
-        console.log('📊 Output constructor:', output?.constructor?.name);
+        console.log('✅ OpenAI Image Edit completed successfully');
         
-        // Extract URL from FileOutput object
-        let imageUrl = null;
+        if (!response.data || response.data.length === 0) {
+            console.error('No image returned from OpenAI API');
+            return res.status(500).json({ 
+                error: 'OpenAI image editing failed',
+                message: 'No image returned from OpenAI API'
+            });
+        }
+
+        // Handle response
+        const image_base64 = response.data[0].b64_json;
+        if (!image_base64) {
+            console.error('No base64 image data returned from OpenAI API');
+            return res.status(500).json({ 
+                error: 'OpenAI image editing failed',
+                message: 'No base64 image data returned from OpenAI API'
+            });
+        }
+
+        // SAVE AGED IMAGE TO SERVER
+        const agedImageBuffer = Buffer.from(image_base64, 'base64');
+        const agedFilename = `aged_${timestamp}.png`;
+        const agedPath = path.join(uploadsDir, agedFilename);
         
-        if (typeof output === 'string' && output.startsWith('http')) {
-            imageUrl = output;
-            console.log('✅ Direct string URL found');
-        } else if (Array.isArray(output) && output.length > 0) {
-            const firstItem = output[0];
-            if (typeof firstItem === 'string') {
-                imageUrl = firstItem;
-            } else if (firstItem && typeof firstItem.url === 'function') {
-                const urlResult = await firstItem.url();
-                imageUrl = (urlResult && urlResult.href) ? urlResult.href : urlResult;
-                console.log('✅ Array FileOutput url() called:', imageUrl);
+        fs.writeFileSync(agedPath, agedImageBuffer);
+        console.log('💾 Aged image saved:', agedPath);
+
+        // Convert to data URL format for web usage
+        const dataUrl = `data:image/png;base64,${image_base64}`;
+        
+        // Also provide server URLs for the saved files
+        const originalUrl = `${req.protocol}://${req.get('host')}/uploads/${originalFilename}`;
+        const agedUrl = `${req.protocol}://${req.get('host')}/uploads/${agedFilename}`;
+        
+        console.log('🖼️ Successfully generated and saved aged image');
+        console.log('📍 Original image URL:', originalUrl);
+        console.log('📍 Aged image URL:', agedUrl);
+        
+        res.json({
+            success: true,
+            agedImageUrl: dataUrl, // Base64 for immediate display
+            agedImageServerUrl: agedUrl, // Server URL for permanent access
+            originalImageServerUrl: originalUrl, // Original image URL
+            model: 'gpt-image-1',
+            targetAge: ageTarget,
+            description: `Aged to ${ageTarget} years old - your future career self!`,
+            savedFiles: {
+                original: originalFilename,
+                aged: agedFilename
             }
-        } else if (output && typeof output === 'object' && typeof output.url === 'function') {
-            const urlResult = await output.url();
-            imageUrl = (urlResult && urlResult.href) ? urlResult.href : urlResult;
-            console.log('✅ FileOutput url() function called:', imageUrl);
-        }
-        
-        console.log('🖼️ Final extracted image URL:', imageUrl);
-        
-        if (imageUrl && typeof imageUrl === 'string' && imageUrl.startsWith('http')) {
-            res.json({
-                success: true,
-                agedImageUrl: imageUrl.trim(),
-                model: 'yuval-alaluf/sam',
-                targetAge: validTargetAge,
-                description: `Aged to ${validTargetAge} years old - your future career self!`
-            });
-        } else {
-            console.error('❌ SAM model failed to return valid image URL');
-            res.status(500).json({ 
-                error: 'SAM aging model failed to generate image',
-                message: 'The face aging AI model encountered an issue. Please try with a different photo (clear, well-lit, single person facing camera).'
-            });
-        }
+        });
         
     } catch (error) {
-        console.error('❌ Error with SAM model:', error);
+        console.error('❌ Error with OpenAI Image Editing:', error);
+        
+        // Handle specific OpenAI API errors
+        let errorMessage = 'The image editing AI model is currently unavailable. Please try again later.';
+        
+        if (error.code === 'invalid_request_error') {
+            errorMessage = 'Invalid image format. Please use a clear photo with a person facing the camera.';
+        } else if (error.code === 'rate_limit_exceeded') {
+            errorMessage = 'Too many requests. Please wait a moment and try again.';
+        } else if (error.message?.includes('content_policy_violation')) {
+            errorMessage = 'Image content not suitable for editing. Please use a different photo.';
+        } else if (error.type === 'image_generation_user_error') {
+            errorMessage = 'Image format or content not suitable for editing. Please try with a different, clearer photo.';
+        }
+        
         res.status(500).json({ 
-            error: 'SAM aging model failed',
-            message: 'The face aging AI model is currently unavailable. Please try again later or use a different photo.',
+            error: 'OpenAI image editing failed',
+            message: errorMessage,
             details: error.message 
         });
     }
 });
 
-// Remove the alternative aging method - we only use SAM model now
+// NEW ENDPOINT: List all saved images
+app.get('/api/saved-images', (req, res) => {
+    try {
+        const files = fs.readdirSync(uploadsDir);
+        const imageFiles = files.filter(file => 
+            file.toLowerCase().endsWith('.png') || 
+            file.toLowerCase().endsWith('.jpg') || 
+            file.toLowerCase().endsWith('.jpeg')
+        );
+        
+        const imageList = imageFiles.map(filename => ({
+            filename,
+            url: `${req.protocol}://${req.get('host')}/uploads/${filename}`,
+            created: fs.statSync(path.join(uploadsDir, filename)).birthtime
+        }));
+        
+        res.json({ images: imageList });
+    } catch (error) {
+        console.error('Error listing images:', error);
+        res.status(500).json({ error: 'Failed to list images' });
+    }
+});
 
 // Serve the main HTML file
 app.get('/', (req, res) => {
@@ -394,6 +476,7 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
   console.log('OpenAI Assistant ready!');
-  console.log('Replicate API token:', process.env.REPLICATE_API_TOKEN ? 'Configured ✅' : 'Missing ❌');
-  console.log('Using official Replicate client with yuval-alaluf/sam model');
+  console.log('OpenAI API Key:', process.env.OPENAI_API_KEY ? 'Configured ✅' : 'Missing ❌');
+  console.log('Using OpenAI Image Editing API (DALL-E 2 edit endpoint)');
+  console.log('Uploads directory:', uploadsDir);
 });

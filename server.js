@@ -263,19 +263,36 @@ app.get('/api/threads/:threadId/messages', async (req, res) => {
 // Generate career visualization endpoint
 app.post('/api/generate-career-visualization', async (req, res) => {
   try {
-    const { careerField, specificRole, userMessage } = req.body;
+    const { careerField, specificRole, userMessage, threadId } = req.body;
     
-    // Try to find the most recent uploaded image in the uploads folder
+    // Try to find the most recent uploaded image for THIS specific thread
     let uploadedImagePath = null;
     try {
       const files = fs.readdirSync(uploadsDir);
-      const uploadFiles = files
-        .filter(file => file.startsWith('upload_') && (file.endsWith('.jpg') || file.endsWith('.jpeg') || file.endsWith('.png')))
-        .map(file => ({
-          name: file,
-          time: fs.statSync(path.join(uploadsDir, file)).birthtime
-        }))
-        .sort((a, b) => b.time - a.time);
+      let uploadFiles;
+      
+      if (threadId) {
+        // Look for images from this specific thread first
+        uploadFiles = files
+          .filter(file => file.startsWith(`upload_${threadId}_`) && (file.endsWith('.jpg') || file.endsWith('.jpeg') || file.endsWith('.png')))
+          .map(file => ({
+            name: file,
+            time: fs.statSync(path.join(uploadsDir, file)).birthtime
+          }))
+          .sort((a, b) => b.time - a.time);
+      }
+      
+      // If no thread-specific images found, fall back to any recent upload (for backward compatibility)
+      if (!uploadFiles || uploadFiles.length === 0) {
+        console.log('📸 No thread-specific image found, looking for any recent uploads...');
+        uploadFiles = files
+          .filter(file => file.startsWith('upload_') && (file.endsWith('.jpg') || file.endsWith('.jpeg') || file.endsWith('.png')))
+          .map(file => ({
+            name: file,
+            time: fs.statSync(path.join(uploadsDir, file)).birthtime
+          }))
+          .sort((a, b) => b.time - a.time);
+      }
       
       if (uploadFiles.length > 0) {
         uploadedImagePath = path.join(uploadsDir, uploadFiles[0].name);
@@ -525,9 +542,12 @@ app.post('/api/upload-file', upload.single('file'), async (req, res) => {
     
     console.log('📁 File received:', req.file.originalname, req.file.mimetype, req.file.size);
     
-    // Save file to uploads folder
+    // Get threadId from query params if available
+    const threadId = req.query.threadId || 'unknown';
+    
+    // Save file to uploads folder with thread ID prefix
     const timestamp = Date.now();
-    const filename = `upload_${timestamp}_${req.file.originalname}`;
+    const filename = `upload_${threadId}_${timestamp}_${req.file.originalname}`;
     const filepath = path.join(uploadsDir, filename);
     
     fs.writeFileSync(filepath, req.file.buffer);
@@ -546,7 +566,8 @@ app.post('/api/upload-file', upload.single('file'), async (req, res) => {
     res.json({
       ...uploadResponse,
       localUrl: `${req.protocol}://${req.get('host')}/uploads/${filename}`,
-      localFilename: filename
+      localFilename: filename,
+      threadId: threadId
     });
   } catch (error) {
     console.error('File upload error:', error);

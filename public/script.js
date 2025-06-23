@@ -144,7 +144,10 @@ async function runAssistant(threadId) {
                         addMessage(args.userMessage, 'assistant');
                     }
                     
-                    const careerResult = await generateCareerVisualization(args);
+                    const careerResult = await generateCareerVisualization({
+                        ...args,
+                        threadId: threadId // Pass threadId to find the right image
+                    });
                     console.log('🖼️ Career visualization result:', careerResult ? 'Success' : 'Failed');
                     
                     if (careerResult && careerResult.success) {
@@ -156,11 +159,9 @@ async function runAssistant(threadId) {
                         });
                         
                         // Display the career visualization immediately
-                        const careerMessage = `
-                            Hier is jouw toekomst als ${args.specificRole || args.careerField}! 🎓
+                        const careerMessage = `Hier is jouw toekomst als ${args.specificRole || args.careerField}! 👨‍💼👩‍💼
                             
-                            ${careerResult.careerImageUrl}
-                        `;
+                            [Your Career Future](${careerResult.careerImageUrl})`;
                         addMessage(careerMessage, 'assistant');
                         
                     } else {
@@ -244,7 +245,7 @@ async function runAssistant(threadId) {
     // Handle case where career visualization was generated but run didn't complete normally
     if (generatedCareerData && runStatus.status === 'requires_action') {
         console.log('✅ Career visualization generated successfully, treating as completed');
-        return `Dit is hoe jij er in de toekomst uit zou kunnen zien! Wat denk je ervan?`;
+        return `Dit is hoe jij er in de toekomst uit zou kunnen zien! Wat vind je ervan?`;
     }
     
     if (runStatus.status === 'completed') {
@@ -504,7 +505,7 @@ function addImageMessage(base64Image, fileName) {
     contentDiv.className = 'message-content';
     contentDiv.innerHTML = `
         <img src="${base64Image}" alt="${fileName}" style="max-width: 100%; border-radius: 8px; margin-bottom: 8px; display: block;">
-        <p style="margin: 0; font-size: 0.9em; opacity: 0.8;">📷 Photo uploaded: ${fileName}</p>
+        <p style="margin: 0; font-size: 0.9em; opacity: 0.8;">📷 Foto geüpload: ${fileName}</p>
     `;
     
     messageDiv.appendChild(contentDiv);
@@ -551,7 +552,13 @@ async function handleImageUpload(event) {
         const formData = new FormData();
         formData.append('file', file);
         
-        const uploadResponse = await fetch('/api/upload-file', {
+        // Add threadId to the upload if we have one
+        let uploadUrl = '/api/upload-file';
+        if (threadId) {
+            uploadUrl += `?threadId=${threadId}`;
+        }
+        
+        const uploadResponse = await fetch(uploadUrl, {
             method: 'POST',
             body: formData
         });

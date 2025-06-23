@@ -62,7 +62,7 @@ async function sendMessage() {
     }
 }
 
-// Server-side API calls (no API keys exposed)
+// Server-side API calls
 async function createThread() {
     const response = await fetch('/api/threads', {
         method: 'POST',
@@ -89,8 +89,6 @@ async function addMessageToThread(threadId, content) {
     return await response.json();
 }
 
-// Add this to your existing script.js - UPDATE the runAssistant function
-
 async function runAssistant(threadId) {
     console.log('🚀 Starting assistant run for thread:', threadId);
     
@@ -110,11 +108,11 @@ async function runAssistant(threadId) {
         throw new Error('Failed to create run - no ID returned');
     }
     
-    // Poll for completion and handle multiple function calls
+    // Poll for completion and handle function calls
     let runStatus = await pollRunStatus(threadId, run.id);
-    let maxIterations = 5; // Increased for career visualization
+    let maxIterations = 5;
     let iteration = 0;
-    let generatedCareerData = null;
+    let generatedCareerData = null; // Track if we already generated career visualization
     
     while (runStatus.status === 'requires_action' && iteration < maxIterations) {
         iteration++;
@@ -128,8 +126,9 @@ async function runAssistant(threadId) {
             
             if (toolCall.function.name === 'generate_career_visualization') {
                 try {
+                    // Check if we already generated career visualization
                     if (generatedCareerData) {
-                        console.log('🔄 Already generated career visualization, using cached result');
+                        console.log('🔄 Career visualization already generated, using cached result');
                         toolOutputs.push({
                             tool_call_id: toolCall.id,
                             output: `SUCCESS: Career visualization already generated. ${generatedCareerData}`
@@ -158,11 +157,9 @@ async function runAssistant(threadId) {
                         
                         // Display the career visualization immediately
                         const careerMessage = `
-                            Hier is jouw professionele toekomst als ${args.specificRole || args.careerField} specialist! 👨‍💼👩‍💼
+                            Hier is jouw toekomst als ${args.specificRole || args.careerField}! 🎓
                             
-                            ![Jouw Carrière Toekomst](${careerResult.careerImageUrl})
-                            
-                            Zo zou je eruit kunnen zien in jouw droomcarrière. Wat denk je ervan?
+                            ${careerResult.careerImageUrl}
                         `;
                         addMessage(careerMessage, 'assistant');
                         
@@ -181,7 +178,6 @@ async function runAssistant(threadId) {
                     });
                 }
             } else if (toolCall.function.name === 'generate_image') {
-                // Keep existing DALL-E functionality
                 try {
                     const args = JSON.parse(toolCall.function.arguments);
                     console.log('🎨 generate_image arguments:', args);
@@ -237,15 +233,18 @@ async function runAssistant(threadId) {
         runStatus = await pollRunStatus(threadId, run.id);
         console.log(`🔄 After tool submission - Status: ${runStatus.status}`);
         
+        // If we generated career visualization and assistant still requires action, 
+        // break the loop to prevent infinite generation
         if (generatedCareerData && runStatus.status === 'requires_action') {
             console.log('🛑 Forcing completion - career visualization already generated');
             break;
         }
     }
     
+    // Handle case where career visualization was generated but run didn't complete normally
     if (generatedCareerData && runStatus.status === 'requires_action') {
         console.log('✅ Career visualization generated successfully, treating as completed');
-        return `Ik heb succesvol een carrière visualisatie gegenereerd. Je kunt nu verdergaan met het gesprek!`;
+        return `Dit is hoe jij er in de toekomst uit zou kunnen zien! Wat denk je ervan?`;
     }
     
     if (runStatus.status === 'completed') {
@@ -264,35 +263,6 @@ async function runAssistant(threadId) {
             console.error('❌ Max iterations reached - possible infinite loop');
         }
         throw new Error(`Run failed with status: ${runStatus.status}`);
-    }
-}
-
-// NEW FUNCTION: Generate career visualization
-async function generateCareerVisualization(args) {
-    console.log('👔 generateCareerVisualization() called with args:', args);
-    
-    try {
-        const response = await fetch('/api/generate-career-visualization', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(args)
-        });
-        
-        if (!response.ok) {
-            const errorData = await response.json();
-            console.error('❌ Career visualization API error:', response.status, errorData);
-            return { success: false, message: errorData.message || 'Failed to generate career visualization' };
-        }
-        
-        const data = await response.json();
-        console.log('📊 Career visualization response:', data.success ? 'Success' : 'Failed');
-        
-        return data;
-    } catch (error) {
-        console.error('💥 Error in generateCareerVisualization():', error);
-        return { success: false, message: error.message };
     }
 }
 
@@ -328,6 +298,35 @@ async function pollRunStatus(threadId, runId) {
     }
     
     return runData;
+}
+
+// Generate career visualization via server API
+async function generateCareerVisualization(args) {
+    console.log('👔 generateCareerVisualization() called with args:', args);
+    
+    try {
+        const response = await fetch('/api/generate-career-visualization', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(args)
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            console.error('❌ Career visualization API error:', response.status, errorData);
+            return { success: false, message: errorData.message || 'Failed to generate career visualization' };
+        }
+        
+        const data = await response.json();
+        console.log('📊 Career visualization response:', data.success ? 'Success' : 'Failed');
+        
+        return data;
+    } catch (error) {
+        console.error('💥 Error in generateCareerVisualization():', error);
+        return { success: false, message: error.message };
+    }
 }
 
 // Generate image via server API
@@ -469,17 +468,6 @@ function hideTyping() {
     sendBtn.disabled = false;
 }
 
-// Focus input on load
-messageInput.focus();
-
-// Test API connection on load
-async function testConnection() {
-    console.log('✅ Ready to chat with your GPT Assistant!');
-}
-
-// Test connection when page loads
-window.addEventListener('load', testConnection);
-
 // Initialize image upload functionality
 function initializeImageUpload() {
     const uploadBtn = document.getElementById('uploadBtn');
@@ -509,9 +497,6 @@ function fileToBase64(file) {
 }
 
 function addImageMessage(base64Image, fileName) {
-    const chatContainer = document.getElementById('chat-container');
-    const typingIndicator = document.getElementById('typing-indicator');
-    
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message user';
     
@@ -528,7 +513,7 @@ function addImageMessage(base64Image, fileName) {
     chatContainer.scrollTop = chatContainer.scrollHeight;
 }
 
-// SINGLE IMAGE UPLOAD HANDLER - Fixed version for Replicate
+// Clean image upload handler
 async function handleImageUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -560,103 +545,69 @@ async function handleImageUpload(event) {
         addImageMessage(base64Image, file.name);
         showTyping();
 
-        // Process image aging directly with Replicate - targeting age 70
-        console.log('🎨 Starting image aging process with Replicate (target: 50 years)...');
+        // Upload image to server and get file ID for OpenAI
+        console.log('📤 Uploading image to server...');
         
-        // Send context to OpenAI assistant for further discussion
-        if (!threadId) {
-            threadId = await createThread();
-        }
-        const agingResponse = await fetch(`/api/age-face/${threadId}`, {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const uploadResponse = await fetch('/api/upload-file', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                imageBase64: base64Image,
-                ageTarget: 50  // Age to 70 for "future career self"
-            })
+            body: formData
         });
 
-        const agingResult = await agingResponse.json();
+        const uploadResult = await uploadResponse.json();
 
-        console.log('🎨 Aging response received:', agingResult);
-
-        if (agingResult.success) {
-            console.log('✅ Image aging completed successfully');
-            console.log('🖼️ Image URL:', agingResult.agedImageUrl);
+        if (uploadResult.id) {
+            console.log('✅ Image uploaded successfully, file ID:', uploadResult.id);
             
-            // Ensure we have a valid URL string
-            let imageUrl = agingResult.agedImageUrl;
-            if (typeof imageUrl !== 'string') {
-                console.error('❌ Invalid image URL type:', typeof imageUrl, imageUrl);
-                throw new Error('Invalid image URL format');
-            }
-            
-            hideTyping();
-            
-            // Show the aged result in Dutch
-            const responseMessage = `
-                Zo zou je er op je ${agingResult.targetAge}ste uit kunnen zien - jouw toekomstige carrière-zelf! 👨‍💼👩‍💼
-                
-                [Je toekomstige zelf op ${agingResult.targetAge}-jarige leeftijd](${imageUrl})
-                
-                Dit is waar je naartoe kunt werken! Welke studie bij de HvA brengt je het dichtst bij deze toekomst?
-            `;
-            
-            addMessage(responseMessage, 'assistant');
-            
-            // Send context to OpenAI assistant for further discussion
+            // Create thread if it doesn't exist
             if (!threadId) {
                 threadId = await createThread();
             }
             
-            const contextMessage = `A student has uploaded their photo and I've successfully generated an aged version showing them at age ${agingResult.targetAge} - their "future career self" at the end of their professional life. This represents someone who has had a full, successful career spanning ${agingResult.targetAge - 25}-${agingResult.targetAge - 20} years.
-
-The aged photo shows them as a wise, experienced professional who has completed their career journey. Please engage them in a conversation about:
-
-1. What career path they imagine this wise, ${agingResult.targetAge}-year-old version of themselves had
-2. What professional achievements and life experiences this person represents
-3. How their current study choice at HvA can lead to becoming this successful future self
-4. Whether they feel proud and inspired by this vision of their future
-5. What steps they need to take now to ensure they become this accomplished person
-
-Frame this as looking at their "future career self" - someone who made great choices and had a fulfilling professional life. Keep responses in Dutch and relate everything back to making the right study choices at Hogeschool van Amsterdam (HvA). Be inspiring and help them connect their current decisions to their long-term legacy.`;
+            // Send message with image attachment to assistant
+            await addMessageToThread(threadId, 'I uploaded an image. Please analyze it and tell me what you see.', [{
+                file_id: uploadResult.id,
+                tools: [{ type: "file_search" }]
+            }]);
             
-            await addMessageToThread(threadId, contextMessage);
+            const response = await runAssistant(threadId);
+            
+            hideTyping();
+            addMessage(response, 'assistant');
             
         } else {
-            console.error('❌ Image aging failed:', agingResult.error);
+            console.error('❌ Image upload failed:', uploadResult);
             hideTyping();
-            
-            // Show clear error message
-            const errorMessage = agingResult.message || 'Er ging iets mis met het verouderen van je foto.';
-            addMessage(`❌ **Foto veroudering mislukt**
-
-${errorMessage}
-
-**Tips voor betere resultaten:**
-- Gebruik een duidelijke foto met je gezicht recht naar de camera
-- Zorg voor goede belichting
-- Gebruik een foto waar je alleen op staat
-- Probeer een andere foto
-
-Je kunt ondertussen wel gewoon vragen stellen over je studiekeuze bij de HvA!`, 'assistant');
+            addMessage('Sorry, there was an error uploading your image. Please try again.', 'assistant');
         }
 
     } catch (error) {
         hideTyping();
         console.error('Error processing image:', error);
-        addMessage('Sorry, er was een fout bij het verwerken van je foto. Probeer het opnieuw of stel me gewoon vragen over je studiekeuze bij de HvA!', 'assistant');
+        addMessage('Sorry, there was an error processing your image. Please try again.', 'assistant');
     }
 
     // Clear the input
     event.target.value = '';
 }
 
+// Focus input on load
+messageInput.focus();
+
+// Test API connection on load
+async function testConnection() {
+    console.log('✅ Ready to chat with your GPT Assistant!');
+}
+
 // Initialize when DOM is ready
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializeImageUpload);
+    document.addEventListener('DOMContentLoaded', () => {
+        initializeImageUpload();
+        testConnection();
+    });
 } else {
     initializeImageUpload();
+    testConnection();
 }

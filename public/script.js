@@ -563,7 +563,11 @@ async function handleImageUpload(event) {
         // Process image aging directly with Replicate - targeting age 70
         console.log('🎨 Starting image aging process with Replicate (target: 50 years)...');
         
-        const agingResponse = await fetch('/api/age-face', {
+        // Send context to OpenAI assistant for further discussion
+        if (!threadId) {
+            threadId = await createThread();
+        }
+        const agingResponse = await fetch(`/api/age-face/${threadId}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'

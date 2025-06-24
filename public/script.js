@@ -153,9 +153,10 @@ async function runAssistant(threadId) {
                     if (careerResult && careerResult.success) {
                         generatedCareerData = `Career visualization generated successfully for ${args.careerField}${args.specificRole ? ` as ${args.specificRole}` : ''}. Image URL: ${careerResult.careerImageUrl}`;
                         
+                        // Guide the assistant to continue with Step 5 - Future Self Conversation
                         toolOutputs.push({
                             tool_call_id: toolCall.id,
-                            output: `SUCCESS: ${generatedCareerData}`
+                            output: `SUCCESS: Career visualization completed and shown to student. NOW IMMEDIATELY PROCEED TO STEP 5: Switch to the role of their 50-year-old future self. Say: "Ik ben jouw 50-jarige zelf. Je hebt keuzes gemaakt die goed bij je pasten. Je mag me alles vragen over hoe ik hier gekomen ben." Then ask "Wat wil jij aan mij vragen?" Do this NOW in your next response.`
                         });
                         
                         // Display the career visualization immediately
@@ -234,18 +235,8 @@ async function runAssistant(threadId) {
         runStatus = await pollRunStatus(threadId, run.id);
         console.log(`🔄 After tool submission - Status: ${runStatus.status}`);
         
-        // If we generated career visualization and assistant still requires action, 
-        // break the loop to prevent infinite generation
-        if (generatedCareerData && runStatus.status === 'requires_action') {
-            console.log('🛑 Forcing completion - career visualization already generated');
-            break;
-        }
-    }
-    
-    // Handle case where career visualization was generated but run didn't complete normally
-    if (generatedCareerData && runStatus.status === 'requires_action') {
-        console.log('✅ Career visualization generated successfully, treating as completed');
-        return `Dit is hoe jij er in de toekomst uit zou kunnen zien! Wat vind je ervan?`;
+        // Remove the early termination logic - let the run complete naturally
+        // The Assistant should process our tool outputs and complete normally
     }
     
     if (runStatus.status === 'completed') {

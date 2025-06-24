@@ -18,7 +18,7 @@ This is a minimal proof-of-concept web app designed to showcase the potential of
 - HTML/CSS/JS frontend
 - Node.js backend with Express
 - OpenAI Assistants API for chat responses
-- [Replicate model](https://replicate.com/yuval-alaluf/sam) for image aging
+- OpenAI Dall-E for image generation
 - Simple file upload and preview interface
 
 ## Getting Started
@@ -36,7 +36,6 @@ This is a minimal proof-of-concept web app designed to showcase the potential of
    ```bash
    OPENAI_API_KEY=your-openai-api-key
    ASSISTANT_ID=your-openai-assistant-id
-   REPLICATE_API_TOKEN=your-replicate-api-token
 
    PORT=3000
    NODE_ENV=development

@@ -353,7 +353,7 @@ app.post('/api/generate-career-visualization', async (req, res) => {
           prompt += 'Show them as a professional in their chosen field, in professional attire, confident and successful expression';
       }
       
-      prompt += ', high quality professional photography, natural lighting, realistic';
+      prompt += ', make the person about 20 years older. High quality professional photography, natural lighting, realistic';
       
       console.log('🎨 Career transformation prompt:', prompt);
       

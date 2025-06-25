@@ -25,8 +25,8 @@ This is a minimal proof-of-concept web app designed to showcase the potential of
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/hva-studycoach-chatbot.git
-   cd hva-studycoach-chatbot
+   git clone https://github.com:meeslindeman/hva-chat.gi
+   cd hva-chat
    ```
 2. Install dependencies:
    ```bash
@@ -45,3 +45,10 @@ This is a minimal proof-of-concept web app designed to showcase the potential of
    npm run dev
    ```
 
+### Using Docker
+```bash
+git clone https://github.com:meeslindeman/hva-chat.gi
+cd hva-chat
+docker build -t hva-chat
+docker compose up
+```
